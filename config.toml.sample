@@ -1,0 +1,16 @@
+[irc]
+nickname = "your_bot"
+password = "your_password"
+
+# this can't be changed right now because other things are hardcoded
+server = "irc.hackint.org"
+port = 6697
+
+channels = [
+    "#testing1",
+    "#testing2",
+    "#testing3",
+]
+readonly_channels = [
+    "#testing3",
+]
