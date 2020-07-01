@@ -1,2 +1,2 @@
-pub use anyhow::{Result, Context, Error};
+pub use anyhow::{Result, Context, Error, anyhow};
 pub use log::*;

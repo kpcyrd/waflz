@@ -92,7 +92,9 @@ pub fn irc_remote_title(protocol: &str, link: &str) -> Result<String> {
         if let Some(remote) = r.remote_addr() {
             let ip = remote.ip();
 
-            let reader = maxminddb::Reader::open_readfile("GeoLite2-Country.mmdb")?;
+            let geoip_db_path = "./GeoLite2-Country.mmdb";
+            let reader = maxminddb::Reader::open_readfile(geoip_db_path)
+                .with_context(|| anyhow!("Failed to open geoip database: {:?}", geoip_db_path))?;
             if let Ok(geoip) = reader.lookup::<geoip2::Country>(ip) {
                 if let Some(country) = geoip.country {
                     if let Some(code) = country.iso_code {
