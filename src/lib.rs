@@ -59,7 +59,10 @@ fn find_title(r: &str) -> Option<String> {
 }
 
 pub fn irc_remote_title(protocol: &str, link: &str) -> Result<String> {
-    let client = HttpClient::new();
+    let client = HttpClient::builder()
+        .user_agent("Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)")
+        .build()?;
+
     let r = client.get(link)
         .timeout(Duration::from_secs(15))
         .send()?;
