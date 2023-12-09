@@ -2,73 +2,67 @@ pub mod config;
 pub mod errors;
 
 use crate::errors::*;
-use regex::Regex;
-use reqwest::blocking::Client as HttpClient;
 use kuchiki::traits::TendrilSink;
 use maxminddb::geoip2;
-use std::time::Duration;
-use humansize::{FileSize, file_size_opts};
+use regex::Regex;
 
 const DOWNLOAD_THRESHOLD: u64 = 1024 * 1024 * 5;
-const LINK_REGEX: &str = r"(http|https)://([\w_-]+(?:(?:\.[\w_-]+)+))([\w.,@?^=%&:/~+#-]*[\w@?^=%&/~+#-])?";
+const LINK_REGEX: &str =
+    r"(http|https)://([\w_-]+(?:(?:\.[\w_-]+)+))([\w.,@?^=%&:/~+#-]*[\w@?^=%&/~+#-])?";
 
 fn prepare_title(title: &str) -> String {
     let title = title.trim();
 
     let mut last_was_whitespace = true;
 
-    title.chars()
-        .fold(String::new(), |mut acc, x| {
-            if x.is_whitespace() {
-                if !last_was_whitespace {
-                    acc.push(' ');
-                    last_was_whitespace = true;
-                }
-            } else {
-                acc.push(x);
-                last_was_whitespace = false;
+    title.chars().fold(String::new(), |mut acc, x| {
+        if x.is_whitespace() {
+            if !last_was_whitespace {
+                acc.push(' ');
+                last_was_whitespace = true;
             }
-            acc
-        })
+        } else {
+            acc.push(x);
+            last_was_whitespace = false;
+        }
+        acc
+    })
 }
 
 fn find_title(r: &str) -> Option<String> {
     let doc = kuchiki::parse_html().one(r);
 
-    let nodes = match doc.select("title") {
+    let mut nodes = match doc.select("title") {
         Ok(nodes) => nodes,
         Err(_) => return None,
     };
 
-    for title in nodes {
-        let as_node = title.as_node();
+    let title = nodes.next()?;
 
-        let text_node = match as_node.first_child() {
-            Some(node) => node,
-            None => return None,
-        };
-        let text = match text_node.as_text() {
-            Some(node) => node.borrow(),
-            None => return None,
-        };
+    let as_node = title.as_node();
 
-        return Some(prepare_title(&text.to_owned()));
-    }
+    let text_node = match as_node.first_child() {
+        Some(node) => node,
+        None => return None,
+    };
+    let text = match text_node.as_text() {
+        Some(node) => node.borrow(),
+        None => return None,
+    };
 
-    None
+    Some(prepare_title(&text.to_owned()))
 }
 
-pub fn irc_remote_title(protocol: &str, link: &str) -> Result<String> {
-    let client = HttpClient::builder()
+pub async fn irc_remote_title(protocol: &str, link: &str) -> Result<String> {
+    let client = reqwest::Client::builder()
         .user_agent("Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)")
         .build()?;
 
-    let r = client.get(link)
-        .timeout(Duration::from_secs(15))
-        .send()?;
+    let r = client.get(link).send().await?;
 
     let headers = r.headers();
-    let content_type = headers.get("content-type")
+    let content_type = headers
+        .get("content-type")
         .map(|s| s.to_str().unwrap_or("application/octet-stream"))
         .unwrap_or("application/octet-stream")
         .to_string();
@@ -112,50 +106,47 @@ pub fn irc_remote_title(protocol: &str, link: &str) -> Result<String> {
 
     if let Some(len) = r.content_length() {
         if len >= DOWNLOAD_THRESHOLD {
-            let title = preview_download(&content_type, len)?;
+            let title = preview_download(&content_type, len);
             return Ok(format!("{}{}", title, extra));
         }
     }
 
-    let body = r.text()?;
+    let body = r.text().await?;
 
     let title = if let Some(title) = find_title(&body) {
         format!("{:?}", title) // TODO: nicer escaping
     } else {
-        preview_download(&content_type, body.len() as u64)?
+        preview_download(&content_type, body.len() as u64)
     };
 
     Ok(format!("{}{}", title, extra))
 }
 
-fn preview_download(content_type: &str, size: u64) -> Result<String> {
-    let size = size.file_size(file_size_opts::CONVENTIONAL)
-        .map_err(Error::msg)?;
-    Ok(format!("{:?} - {}", content_type, size))
+fn preview_download(content_type: &str, size: u64) -> String {
+    let size = humansize::format_size(size, humansize::BINARY);
+    format!("{:?} - {}", content_type, size)
 }
 
 pub fn find_link(msg: &str) -> Option<(String, String)> {
     let re = Regex::new(LINK_REGEX).unwrap();
 
-    match re.captures(&msg) {
-        Some(cap) => {
-            let link = String::from(&cap[0]);
-            let protocol = String::from(&cap[1]);
+    let cap = re.captures(msg)?;
+    let link = String::from(&cap[0]);
+    let protocol = String::from(&cap[1]);
 
-            Some((protocol, link))
-        },
-        None => None
-    }
+    Some((protocol, link))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_parse_title() {
-        let title = irc_remote_title("https", "https://github.com/").unwrap();
+    #[tokio::test]
+    async fn test_parse_title() {
+        let title = irc_remote_title("https", "https://github.com/")
+            .await
+            .unwrap();
         assert_eq!(title.as_str(),
-            "\"The world’s leading software development platform · GitHub\" \u{2}\u{3}3[hsts]\u{f} \u{2}\u{3}2[csp]\u{f}");
+            "\"GitHub: Let’s build from here · GitHub\" \u{2}\u{3}3[hsts]\u{f} \u{2}\u{3}2[csp]\u{f} (US)");
     }
 }

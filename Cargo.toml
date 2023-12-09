@@ -5,15 +5,17 @@ authors = ["user"]
 edition = "2018"
 
 [dependencies]
-irc = "0.13"
-regex = "1.0"
-reqwest = { version="0.10.4", features=["blocking"] }
 anyhow = "1.0.26"
-kuchiki = "0.7"
-env_logger = "0.6"
+env_logger = "0.10"
+futures = "0.3.29"
+humansize = "2"
+irc = "0.15"
+kuchiki = "0.8"
 log = "0.4"
-humansize = "1.1.0"
-maxminddb = "0.13.0"
-toml = "0.5.6"
+maxminddb = "0.23"
+regex = "1.0"
+reqwest = "0.11"
 serde = "1"
 serde_derive = "1"
+tokio = { version = "1.35.0", features = ["macros", "rt-multi-thread", "time"] }
+toml = "0.8"

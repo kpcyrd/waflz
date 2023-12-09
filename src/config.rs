@@ -1,5 +1,5 @@
 use crate::errors::*;
-use serde_derive::{Serialize, Deserialize};
+use serde_derive::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
 
@@ -11,7 +11,7 @@ pub struct ConfigFile {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
     pub nickname: String,
-    pub password: String,
+    pub password: Option<String>,
 
     pub server: String,
     pub port: Option<u16>,
@@ -22,9 +22,7 @@ pub struct Config {
 }
 
 pub fn load_from(path: &str) -> Result<ConfigFile> {
-    let buf = fs::read(path)
-        .context("Failed to read config file")?;
-    let config = toml::from_slice(&buf)
-        .context("Failed to deserialize config")?;
+    let buf = fs::read_to_string(path).context("Failed to read config file")?;
+    let config = toml::from_str(&buf).context("Failed to deserialize config")?;
     Ok(config)
 }
