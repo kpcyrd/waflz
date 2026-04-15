@@ -146,7 +146,9 @@ mod tests {
         let title = irc_remote_title("https", "https://github.com/")
             .await
             .unwrap();
-        assert_eq!(title.as_str(),
-            "\"GitHub: Let’s build from here · GitHub\" \u{2}\u{3}3[hsts]\u{f} \u{2}\u{3}2[csp]\u{f} (US)");
+        assert_eq!(
+            title.as_str(),
+            "\"GitHub: Let’s build from here · GitHub\" \u{2}\u{3}3[hsts]\u{f} \u{2}\u{3}2[csp]\u{f} (US)"
+        );
     }
 }

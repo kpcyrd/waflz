@@ -1,6 +1,8 @@
+use data_encoding::BASE64;
 use env_logger::Env;
 use futures::prelude::*;
 use irc::client::prelude::*;
+use irc::proto::command::CapSubCommand;
 use std::default::Default;
 use tokio::time;
 use waflz::config;
@@ -8,6 +10,7 @@ use waflz::errors::*;
 use waflz::{find_link, irc_remote_title};
 
 const HTTP_PREVIEW_TIMEOUT: time::Duration = time::Duration::from_secs(10);
+const IRC_AUTH_TIMEOUT: time::Duration = time::Duration::from_secs(300);
 
 async fn join(sender: &Sender, channels: &[String]) -> Result<()> {
     for channel in channels {
@@ -25,8 +28,7 @@ async fn main() -> Result<()> {
         config::load_from("config.toml").context("Failed to load config from config.toml")?;
 
     let irc_config = Config {
-        nickname: Some(config.irc.nickname),
-        nick_password: config.irc.password.clone(),
+        nickname: Some(config.irc.nickname.clone()),
         server: Some(config.irc.server),
         port: Some(config.irc.port.unwrap_or(6697)),
         use_tls: Some(true),
@@ -35,7 +37,6 @@ async fn main() -> Result<()> {
 
     let mut client = Client::from_config(irc_config).await?;
     println!("[+] connected...");
-    client.identify().unwrap();
     println!("[+] authenticating...");
 
     let channels = config.irc.channels;
@@ -43,6 +44,55 @@ async fn main() -> Result<()> {
 
     let mut stream = client.stream()?;
     let sender = client.sender();
+
+    match time::timeout(IRC_AUTH_TIMEOUT, async {
+        if let Some(password) = &config.irc.password {
+            client.send_cap_req(&[Capability::Sasl])?;
+            while let Some(message) = stream.next().await.transpose()? {
+                debug!("incoming: {:?}", message);
+
+                match message.command {
+                    Command::CAP(_, subcommand, ref args, _) => {
+                        if subcommand == CapSubCommand::ACK
+                            && let Some(args) = args
+                            && args.contains("sasl")
+                        {
+                            println!("[+] ircd confirmed sasl capability");
+                            client.send_sasl_plain()?;
+                        }
+                    }
+
+                    Command::AUTHENTICATE(ref data) => {
+                        if data == "+" {
+                            println!("[+] sending credentials");
+                            let auth = BASE64.encode(
+                                format!("\0{}\0{}", config.irc.nickname, password).as_bytes(),
+                            );
+                            client.send_sasl(auth)?;
+                        }
+                    }
+                    Command::Response(Response::RPL_SASLSUCCESS, _) => {
+                        println!("[+] login successful");
+                        client.identify()?;
+                    }
+                    Command::Response(Response::RPL_WELCOME, _) => {
+                        debug!("Received welcome indicator from ircd, ending auth timeout");
+                        break;
+                    }
+                    _ => (),
+                }
+            }
+        } else {
+            client.identify()?;
+        }
+        Result::<(), Error>::Ok(())
+    })
+    .await
+    {
+        Ok(Ok(_)) => (),
+        Ok(Err(err)) => return Err(err),
+        Err(err) => return Err(err).context("Authentication timeout"),
+    }
 
     while let Some(message) = stream.next().await.transpose()? {
         debug!("incoming: {:?}", message);
@@ -79,19 +129,7 @@ async fn main() -> Result<()> {
                 println!("TOPIC: {:?}: {:?}", target, msg);
             }
             Command::Response(Response::RPL_ENDOFMOTD, _) => {
-                if config.irc.password.is_none() {
-                    join(&sender, &channels).await?;
-                }
-            }
-            Command::NOTICE(ref _target, ref msg) => {
-                if let Some(prefix) = message.prefix {
-                    if prefix.to_string() == "NickServ!NickServ@services.hackint.org"
-                        && msg.starts_with("You are now identified ")
-                    {
-                        println!("[+] login successful");
-                        join(&sender, &channels).await?;
-                    }
-                }
+                join(&sender, &channels).await?;
             }
             _ => (),
         }
