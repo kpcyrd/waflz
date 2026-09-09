@@ -98,7 +98,7 @@ async fn main() -> Result<()> {
         debug!("incoming: {:?}", message);
 
         match message.command {
-            Command::PRIVMSG(ref target, ref msg) => {
+            Command::NOTICE(ref target, ref msg) => {
                 let prefix = match &message.prefix {
                     Some(Prefix::ServerName(name)) => name.as_ref(),
                     Some(Prefix::Nickname(name, _, _)) => name.as_ref(),
@@ -111,7 +111,7 @@ async fn main() -> Result<()> {
                 }
 
                 if msg.starts_with("waflz") {
-                    sender.send_privmsg(target, ":)").unwrap();
+                    sender.send_notice(target, ":)").unwrap();
                 } else if let Some((protocol, link)) = find_link(msg) {
                     println!("found link: {:?}", link);
 
@@ -119,7 +119,7 @@ async fn main() -> Result<()> {
                     let future = time::timeout(HTTP_PREVIEW_TIMEOUT, future);
 
                     if let Ok(Ok(title)) = future.await {
-                        sender.send_privmsg(target, &title).unwrap();
+                        sender.send_notice(target, &title).unwrap();
                     }
                 }
             }
