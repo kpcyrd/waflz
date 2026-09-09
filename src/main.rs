@@ -98,7 +98,7 @@ async fn main() -> Result<()> {
         debug!("incoming: {:?}", message);
 
         match message.command {
-            Command::NOTICE(ref target, ref msg) => {
+            Command::PRIVMSG(ref target, ref msg) => {
                 let prefix = match &message.prefix {
                     Some(Prefix::ServerName(name)) => name.as_ref(),
                     Some(Prefix::Nickname(name, _, _)) => name.as_ref(),
